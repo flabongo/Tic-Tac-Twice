@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ultimate Tic-Tac-Toe — Multiplayer</title>
+<style>
+  :root {
+    --bg: #f4f3ef;
+    --panel: #ffffff;
+    --cell: #fbfaf7;
+    --border: #ddd9cf;
+    --border-strong: #c7c2b5;
+    --text: #222220;
+    --text-muted: #77756e;
+    --red: #E24B4A;
+    --blue: #378ADD;
+    --yellow: #F5C518;
+    --green: #3B9E5C;
+    --turn-other: #232320;
+    --last-move-bg: #e8e5da;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--bg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--text);
+  }
+  .wrap { max-width: 460px; margin: 0 auto; padding: 20px 16px; }
+  h2 { font-size: 16px; font-weight: 600; margin: 20px 0 8px; }
+  p.muted { color: var(--text-muted); font-size: 14px; }
+  button {
+    appearance: none; -webkit-appearance: none; margin: 0;
+    touch-action: manipulation; user-select: none; -webkit-user-select: none;
+    font-family: inherit; font-size: 13px; padding: 7px 14px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+    cursor: pointer;
+  }
+  button:hover { background: #f0efe9; }
+  button:active { transform: scale(0.97); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  input[type=text] {
+    font-family: inherit; font-size: 15px; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 6px; width: 100%;
+  }
+
+  /* Login */
+  #screen-login { display: flex; flex-direction: column; align-items: center; padding-top: 80px; text-align: center; }
+  #screen-login h1 { font-size: 20px; margin-bottom: 24px; }
+  .login-box { width: 100%; max-width: 280px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* Topbar */
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; gap: 8px; }
+  .topbar b { font-weight: 600; }
+
+  /* Lists */
+  .list-row {
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 8px; font-size: 14px; cursor: default;
+  }
+  .list-row.clickable { cursor: pointer; }
+  .list-row.clickable:hover { background: #f6f5f0; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 8px; }
+  .turn-yes { color: var(--green); font-weight: 600; font-size: 13px; }
+  .turn-no { color: var(--text-muted); font-size: 13px; }
+  .invite-banner {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #fff8e1; border: 1px solid var(--yellow); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 8px; font-size: 14px; gap: 8px;
+  }
+  .invite-banner button { margin-left: 6px; }
+
+  /* Game screen */
+  #game-status { font-size: 15px; font-weight: 500; margin: 4px 0 10px; }
+  #game-end-panel {
+    display: none; flex-direction: column; gap: 10px; align-items: center;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-bottom: 14px; text-align: center;
+  }
+  #board-outer { padding: 6px; border-radius: 12px; box-shadow: 0 0 0 3px transparent; }
+  #big-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; background: var(--panel); padding: 8px; border-radius: 8px; border: 1px solid var(--border); }
+  .big-cell { position: relative; border-radius: 6px; padding: 4px; background: var(--cell); min-width: 0; }
+  .small-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; min-width: 0; }
+  .small-cell { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; background: var(--cell); border: 0.5px solid var(--border); border-radius: 3px; padding: 3px; min-width: 0; min-height: 0; overflow: hidden; }
+  .small-cell svg, .overlay svg { display: block; }
+  .overlay { position: absolute; inset: 4px; pointer-events: none; opacity: 0.9; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- LOGIN -->
+  <div id="screen-login">
+    <h1>Ultimate Tic-Tac-Toe</h1>
+    <div class="login-box">
+      <input id="username-input" type="text" placeholder="Pick a username" maxlength="20">
+      <button id="join-btn">Join</button>
+    </div>
+  </div>
+
+  <!-- LOBBY -->
+  <div id="screen-lobby" style="display:none">
+    <div class="topbar">
+      <span>Playing as <b id="my-username"></b></span>
+      <span>
+        <button id="history-btn">History</button>
+        <button id="logout-btn">Log out</button>
+      </span>
+    </div>
+    <div id="incoming-invites"></div>
+    <h2>Online players</h2>
+    <div id="online-list"></div>
+    <h2>Your games</h2>
+    <div id="games-list"></div>
+  </div>
+
+  <!-- GAME -->
+  <div id="screen-game" style="display:none">
+    <div class="topbar">
+      <button id="back-to-lobby">&larr; Lobby</button>
+      <b id="opponent-name"></b>
+      <button id="forfeit-btn">Forfeit</button>
+    </div>
+    <div id="game-status"></div>
+    <div id="game-end-panel"></div>
+    <div id="board-outer">
+      <div id="big-grid"></div>
+    </div>
+  </div>
+
+  <!-- HISTORY -->
+  <div id="screen-history" style="display:none">
+    <div class="topbar">
+      <button id="back-from-history">&larr; Lobby</button>
+      <b>Game history</b>
+      <span style="width:60px"></span>
+    </div>
+    <div id="history-list"></div>
+  </div>
+
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+import {
+  getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc,
+  onSnapshot, query, where, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAqvXwoossCdwdDongu23kCKvnbEvCzUZ4",
+  authDomain: "tic-tac-twice-9107b.firebaseapp.com",
+  projectId: "tic-tac-twice-9107b",
+  storageBucket: "tic-tac-twice-9107b.firebasestorage.app",
+  messagingSenderId: "688093274029",
+  appId: "1:688093274029:web:c2a70c33fe4794cbf68b24"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const RED = '#E24B4A', BLUE = '#378ADD';
+const LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+
+// ---- App state ----
+let myUsername = null;
+let currentScreen = 'login';
+let currentGameId = null;
+let currentGameData = null;
+let presenceCache = {};        // username -> lastSeen millis
+let incomingInvites = [];
+let outgoingInvites = [];
+let activeGamesCache = [];
+let historyCache = [];
+let heartbeatInterval = null;
+let onlineExpiryInterval = null;
+let unsubPresence = null;
+let unsubIncoming = null;
+let unsubOutgoing = null;
+let unsubGames = null;
+
+// ---- Helpers ----
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function checkWin(cells) {
+  for (const [a, b, c] of LINES) {
+    if (cells[a] && cells[a] !== 'draw' && cells[a] === cells[b] && cells[a] === cells[c]) return cells[a];
+  }
+  return null;
+}
+
+function symbolSvg(value, big) {
+  const color = value === 'X' ? RED : BLUE;
+  const w = big ? 8 : 3;
+  if (value === 'X') {
+    return '<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><line x1="18" y1="18" x2="82" y2="82" stroke="' + color + '" stroke-width="' + w + '" stroke-linecap="round"/><line x1="82" y1="18" x2="18" y2="82" stroke="' + color + '" stroke-width="' + w + '" stroke-linecap="round"/></svg>';
+  }
+  return '<svg viewBox="0 0 100 100" style="width:100%;height:100%;"><circle cx="50" cy="50" r="32" fill="none" stroke="' + color + '" stroke-width="' + w + '"/></svg>';
+}
+
+function opponentOf(game) {
+  return game.players.find(p => p !== myUsername);
+}
+
+// ---- Screens ----
+function showScreen(name) {
+  currentScreen = name;
+  ['login', 'lobby', 'game', 'history'].forEach(s => {
+    document.getElementById('screen-' + s).style.display = (s === name) ? '' : 'none';
+  });
+  if (name === 'lobby') {
+    document.getElementById('my-username').textContent = myUsername;
+    renderOnlineList();
+    renderIncomingInvites();
+    renderGamesList();
+  }
+  if (name === 'history') renderHistoryList();
+}
+
+// ---- Login ----
+const savedName = localStorage.getItem('ttt_username');
+if (savedName) document.getElementById('username-input').value = savedName;
+
+document.getElementById('join-btn').addEventListener('click', joinLobby);
+document.getElementById('username-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') joinLobby();
+});
+
+function joinLobby() {
+  const input = document.getElementById('username-input');
+  const name = input.value.trim();
+  if (!name) return;
+  myUsername = name;
+  localStorage.setItem('ttt_username', name);
+  startPresenceHeartbeat();
+  subscribeOnlineUsers();
+  subscribeIncomingInvites();
+  subscribeOutgoingInvites();
+  subscribeMyGames();
+  showScreen('lobby');
+}
+
+// ---- Logout ----
+document.getElementById('logout-btn').addEventListener('click', logout);
+
+async function logout() {
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+  if (onlineExpiryInterval) clearInterval(onlineExpiryInterval);
+  if (unsubPresence) unsubPresence();
+  if (unsubIncoming) unsubIncoming();
+  if (unsubOutgoing) unsubOutgoing();
+  if (unsubGames) unsubGames();
+
+  if (myUsername) {
+    try { await deleteDoc(doc(db, 'presence', myUsername)); } catch (e) { /* ignore */ }
+  }
+
+  localStorage.removeItem('ttt_username');
+  myUsername = null;
+  currentGameId = null;
+  currentGameData = null;
+  presenceCache = {};
+  incomingInvites = [];
+  outgoingInvites = [];
+  activeGamesCache = [];
+  historyCache = [];
+
+  document.getElementById('username-input').value = '';
+  showScreen('login');
+}
+
+// ---- Presence ----
+async function heartbeat() {
+  if (!myUsername) return;
+  await setDoc(doc(db, 'presence', myUsername), {
+    username: myUsername,
+    lastSeen: serverTimestamp()
+  });
+}
+function startPresenceHeartbeat() {
+  heartbeat();
+  heartbeatInterval = setInterval(heartbeat, 10000);
+}
+
+function subscribeOnlineUsers() {
+  unsubPresence = onSnapshot(collection(db, 'presence'), snap => {
+    presenceCache = {};
+    snap.forEach(d => {
+      const data = d.data();
+      if (data.lastSeen) presenceCache[d.id] = data.lastSeen.toMillis();
+    });
+    renderOnlineList();
+  });
+  onlineExpiryInterval = setInterval(renderOnlineList, 5000); // expire stale users even with no new snapshot
+}
+
+function renderOnlineList() {
+  const container = document.getElementById('online-list');
+  if (!container || currentScreen !== 'lobby') return;
+  const now = Date.now();
+  const online = Object.keys(presenceCache)
+    .filter(u => u !== myUsername && now - presenceCache[u] < 25000)
+    .sort();
+  if (online.length === 0) {
+    container.innerHTML = '<p class="muted">No one else is online right now.</p>';
+    return;
+  }
+  container.innerHTML = '';
+  online.forEach(u => {
+    const alreadyInvited = outgoingInvites.some(inv => inv.to === u);
+    const row = document.createElement('div');
+    row.className = 'list-row';
+    row.innerHTML =
+      '<span><span class="dot"></span>' + escapeHtml(u) + '</span>' +
+      '<button class="invite-btn" ' + (alreadyInvited ? 'disabled' : '') + '>' +
+      (alreadyInvited ? 'Invited' : 'Invite') + '</button>';
+    row.querySelector('.invite-btn').addEventListener('click', () => sendInvite(u));
+    container.appendChild(row);
+  });
+}
+
+// ---- Invites ----
+async function sendInvite(toUser) {
+  if (outgoingInvites.some(inv => inv.to === toUser)) return;
+  await addDoc(collection(db, 'invites'), {
+    from: myUsername, to: toUser, status: 'pending', createdAt: serverTimestamp()
+  });
+}
+
+function subscribeIncomingInvites() {
+  const q = query(collection(db, 'invites'), where('to', '==', myUsername), where('status', '==', 'pending'));
+  unsubIncoming = onSnapshot(q, snap => {
+    incomingInvites = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderIncomingInvites();
+  });
+}
+
+function subscribeOutgoingInvites() {
+  const q = query(collection(db, 'invites'), where('from', '==', myUsername));
+  unsubOutgoing = onSnapshot(q, snap => {
+    outgoingInvites = [];
+    snap.forEach(d => {
+      const data = d.data();
+      if (data.status === 'pending') outgoingInvites.push({ id: d.id, ...data });
+      else if (data.status === 'declined') deleteDoc(doc(db, 'invites', d.id));
+    });
+    renderOnlineList();
+  });
+}
+
+function renderIncomingInvites() {
+  const container = document.getElementById('incoming-invites');
+  if (!container || currentScreen !== 'lobby') return;
+  if (incomingInvites.length === 0) { container.innerHTML = ''; return; }
+  container.innerHTML = '';
+  incomingInvites.forEach(inv => {
+    const row = document.createElement('div');
+    row.className = 'invite-banner';
+    row.innerHTML =
+      '<span><b>' + escapeHtml(inv.from) + '</b> invited you to play</span>' +
+      '<span><button class="accept-btn">Accept</button><button class="decline-btn">Decline</button></span>';
+    row.querySelector('.accept-btn').addEventListener('click', () => acceptInvite(inv));
+    row.querySelector('.decline-btn').addEventListener('click', () => declineInvite(inv));
+    container.appendChild(row);
+  });
+}
+
+async function acceptInvite(inv) {
+  const players = [inv.from, inv.to];
+  const firstIsFrom = Math.random() < 0.5;
+  const symbols = firstIsFrom
+    ? { [inv.from]: 'X', [inv.to]: 'O' }
+    : { [inv.from]: 'O', [inv.to]: 'X' };
+  const currentTurn = symbols[inv.from] === 'X' ? inv.from : inv.to;
+
+  await addDoc(collection(db, 'games'), {
+    players, symbols,
+    board: Array(81).fill(null),
+    bigWinners: Array(9).fill(null),
+    currentTurn, activeBig: null,
+    status: 'active', winner: null,
+    forfeitedBy: null, rematchRequestedBy: null,
+    lastMove: null,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+  });
+  await deleteDoc(doc(db, 'invites', inv.id));
+}
+
+async function declineInvite(inv) {
+  await updateDoc(doc(db, 'invites', inv.id), { status: 'declined' });
+}
+
+// ---- Games list ----
+function subscribeMyGames() {
+  const q = query(collection(db, 'games'), where('players', 'array-contains', myUsername));
+  unsubGames = onSnapshot(q, snap => {
+    const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    activeGamesCache = all.filter(g => g.status === 'active');
+    historyCache = all.filter(g => g.status === 'finished')
+      .sort((a, b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0));
+
+    renderGamesList();
+    if (currentScreen === 'history') renderHistoryList();
+    if (currentScreen === 'game' && currentGameId) {
+      const updated = all.find(g => g.id === currentGameId);
+      if (updated) { currentGameData = updated; renderGameScreen(); }
+    }
+  });
+}
+
+function renderGamesList() {
+  const container = document.getElementById('games-list');
+  if (!container || currentScreen !== 'lobby') return;
+  if (activeGamesCache.length === 0) {
+    container.innerHTML = '<p class="muted">No games in progress. Invite someone above!</p>';
+    return;
+  }
+  container.innerHTML = '';
+  activeGamesCache.forEach(g => {
+    const opp = opponentOf(g);
+    const myTurn = g.currentTurn === myUsername;
+    const row = document.createElement('div');
+    row.className = 'list-row clickable';
+    row.innerHTML =
+      '<span>vs <b>' + escapeHtml(opp) + '</b></span>' +
+      '<span class="' + (myTurn ? 'turn-yes' : 'turn-no') + '">' + (myTurn ? 'Your turn' : "Their turn") + '</span>';
+    row.addEventListener('click', () => openGame(g.id));
+    container.appendChild(row);
+  });
+}
+
+// ---- Game screen ----
+function openGame(gameId) {
+  currentGameId = gameId;
+  const all = activeGamesCache.concat(historyCache);
+  currentGameData = all.find(g => g.id === gameId) || null;
+  showScreen('game');
+  renderGameScreen();
+}
+
+document.getElementById('back-to-lobby').addEventListener('click', () => showScreen('lobby'));
+document.getElementById('history-btn').addEventListener('click', () => showScreen('history'));
+document.getElementById('back-from-history').addEventListener('click', () => showScreen('lobby'));
+
+document.getElementById('forfeit-btn').addEventListener('click', async () => {
+  const g = currentGameData;
+  if (!g || g.status !== 'active') return;
+  if (!confirm('Forfeit this game?')) return;
+  await updateDoc(doc(db, 'games', g.id), {
+    status: 'finished',
+    winner: opponentOf(g),
+    forfeitedBy: myUsername,
+    updatedAt: serverTimestamp()
+  });
+});
+
+function renderGameScreen() {
+  const g = currentGameData;
+  if (!g) return;
+  const opp = opponentOf(g);
+  document.getElementById('opponent-name').textContent = 'vs ' + opp;
+
+  const statusEl = document.getElementById('game-status');
+  const panel = document.getElementById('game-end-panel');
+  const forfeitBtn = document.getElementById('forfeit-btn');
+
+  if (g.status === 'finished') {
+    forfeitBtn.style.display = 'none';
+    let message;
+    if (g.winner === 'draw') message = "It's a draw";
+    else if (g.forfeitedBy) message = g.forfeitedBy === myUsername ? 'You forfeited' : escapeHtml(opp) + ' forfeited — you win';
+    else message = g.winner === myUsername ? 'You win!' : escapeHtml(opp) + ' wins';
+    statusEl.innerHTML = message;
+
+    panel.style.display = 'flex';
+    if (g.rematchRequestedBy && g.rematchRequestedBy !== myUsername) {
+      panel.innerHTML =
+        '<span>' + escapeHtml(opp) + ' wants a rematch.</span>' +
+        '<button id="rematch-accept">Accept rematch</button>';
+      document.getElementById('rematch-accept').addEventListener('click', acceptRematch);
+    } else if (g.rematchRequestedBy === myUsername) {
+      panel.innerHTML = '<span>Rematch request sent — waiting for ' + escapeHtml(opp) + '.</span>';
+    } else if (!g.forfeitedBy) {
+      panel.innerHTML = '<span>' + message + '</span><button id="rematch-btn">Request rematch</button>';
+      document.getElementById('rematch-btn').addEventListener('click', requestRematch);
+    } else {
+      panel.innerHTML = '<span>' + message + '</span>';
+    }
+  } else {
+    forfeitBtn.style.display = '';
+    panel.style.display = 'none';
+    const myTurn = g.currentTurn === myUsername;
+    statusEl.innerHTML = myTurn ? 'Your turn (' + g.symbols[myUsername] + ')' : escapeHtml(opp) + "'s turn";
+  }
+
+  renderBoard(g);
+}
+
+function renderBoard(g) {
+  const grid = document.getElementById('big-grid');
+  const outer = document.getElementById('board-outer');
+  const isMyTurn = g.status === 'active' && g.currentTurn === myUsername;
+  const turnActive = g.status === 'active';
+  const highlightColor = g.currentTurn === myUsername ? 'var(--yellow)' : 'var(--turn-other)';
+
+  outer.style.boxShadow = (turnActive && g.activeBig === null) ? ('0 0 0 3px ' + highlightColor) : '0 0 0 3px transparent';
+
+  grid.innerHTML = '';
+  for (let bigIdx = 0; bigIdx < 9; bigIdx++) {
+    const isTargetBig = turnActive && g.activeBig === bigIdx;
+    const cell = document.createElement('div');
+    cell.className = 'big-cell';
+    cell.style.boxShadow = isTargetBig ? ('0 0 0 3px ' + highlightColor) : '0 0 0 2px var(--border-strong)';
+
+    const smallGrid = document.createElement('div');
+    smallGrid.className = 'small-grid';
+
+    for (let smallIdx = 0; smallIdx < 9; smallIdx++) {
+      const idx = bigIdx * 9 + smallIdx;
+      const value = g.board[idx];
+      const valid = isMyTurn && g.bigWinners[bigIdx] === null && value === null &&
+        (g.activeBig === null || g.activeBig === bigIdx);
+      const isLastMove = g.lastMove && g.lastMove.bigIdx === bigIdx && g.lastMove.smallIdx === smallIdx;
+
+      const btn = document.createElement('button');
+      btn.className = 'small-cell';
+      btn.style.cursor = valid ? 'pointer' : 'default';
+      btn.style.background = isLastMove ? 'var(--last-move-bg)' : 'var(--cell)';
+      if (value) btn.innerHTML = symbolSvg(value, false);
+      if (valid) btn.addEventListener('click', () => makeMove(bigIdx, smallIdx));
+      else if (!value) btn.style.opacity = '0.5';
+      smallGrid.appendChild(btn);
+    }
+    cell.appendChild(smallGrid);
+
+    if (g.bigWinners[bigIdx] === 'X' || g.bigWinners[bigIdx] === 'O') {
+      const ov = document.createElement('div');
+      ov.className = 'overlay';
+      ov.innerHTML = symbolSvg(g.bigWinners[bigIdx], true);
+      cell.appendChild(ov);
+    }
+    grid.appendChild(cell);
+  }
+}
+
+async function makeMove(bigIdx, smallIdx) {
+  const g = currentGameData;
+  if (!g || g.status !== 'active') return;
+  if (g.currentTurn !== myUsername) return;
+  if (g.bigWinners[bigIdx] !== null) return;
+  const idx = bigIdx * 9 + smallIdx;
+  if (g.board[idx] !== null) return;
+  if (g.activeBig !== null && g.activeBig !== bigIdx) return;
+
+  const mySymbol = g.symbols[myUsername];
+  const board = g.board.slice();
+  board[idx] = mySymbol;
+
+  const bigWinners = g.bigWinners.slice();
+  if (bigWinners[bigIdx] === null) {
+    const smallCells = board.slice(bigIdx * 9, bigIdx * 9 + 9);
+    const w = checkWin(smallCells);
+    if (w) bigWinners[bigIdx] = w;
+    else if (smallCells.every(v => v !== null)) bigWinners[bigIdx] = 'draw';
+  }
+
+  const update = { board, bigWinners, lastMove: { bigIdx, smallIdx }, updatedAt: serverTimestamp() };
+  const overall = checkWin(bigWinners);
+  if (overall) {
+    update.status = 'finished';
+    update.winner = g.players.find(p => g.symbols[p] === overall);
+  } else if (bigWinners.every(v => v !== null)) {
+    update.status = 'finished';
+    update.winner = 'draw';
+  } else {
+    update.activeBig = bigWinners[smallIdx] === null ? smallIdx : null;
+    update.currentTurn = g.players.find(p => p !== myUsername);
+  }
+
+  await updateDoc(doc(db, 'games', g.id), update);
+}
+
+// ---- Rematch ----
+async function requestRematch() {
+  await updateDoc(doc(db, 'games', currentGameData.id), { rematchRequestedBy: myUsername });
+}
+
+async function acceptRematch() {
+  const g = currentGameData;
+  const players = g.players;
+  const firstIsP0 = Math.random() < 0.5;
+  const symbols = firstIsP0
+    ? { [players[0]]: 'X', [players[1]]: 'O' }
+    : { [players[0]]: 'O', [players[1]]: 'X' };
+  const currentTurn = symbols[players[0]] === 'X' ? players[0] : players[1];
+
+  const ref = await addDoc(collection(db, 'games'), {
+    players, symbols,
+    board: Array(81).fill(null),
+    bigWinners: Array(9).fill(null),
+    currentTurn, activeBig: null,
+    status: 'active', winner: null,
+    forfeitedBy: null, rematchRequestedBy: null,
+    lastMove: null,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+  });
+  showScreen('lobby');
+  setTimeout(() => openGame(ref.id), 400);
+}
+
+// ---- History ----
+function renderHistoryList() {
+  const container = document.getElementById('history-list');
+  if (!container) return;
+  if (historyCache.length === 0) {
+    container.innerHTML = '<p class="muted">No finished games yet.</p>';
+    return;
+  }
+  container.innerHTML = '';
+  historyCache.forEach(g => {
+    const opp = opponentOf(g);
+    let result;
+    if (g.winner === 'draw') result = 'Draw';
+    else if (g.forfeitedBy) result = g.forfeitedBy === myUsername ? 'Forfeited' : 'Won (opponent forfeited)';
+    else result = g.winner === myUsername ? 'Won' : 'Lost';
+    const date = g.updatedAt ? new Date(g.updatedAt.toMillis()).toLocaleString() : '';
+    const row = document.createElement('div');
+    row.className = 'list-row';
+    row.innerHTML = '<span>vs <b>' + escapeHtml(opp) + '</b> — ' + result + '</span><span class="muted">' + escapeHtml(date) + '</span>';
+    container.appendChild(row);
+  });
+}
+</script>
+</body>
+</html>
