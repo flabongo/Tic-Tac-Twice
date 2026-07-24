@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A single self-contained HTML file (`ultimate-tic-tac-toe-multiplayer3.html`) implementing online multiplayer Ultimate Tic-Tac-Toe. There is no build system, no package.json, and no test suite — everything (markup, CSS, and JS) lives in this one file. It is not a git repository.
+A single self-contained HTML file (`index.html`) implementing online multiplayer Ultimate Tic-Tac-Toe. There is no build system, no package.json, and no test suite — everything (markup, CSS, and JS) lives in this one file.
 
 ## Running it
 
-Open `ultimate-tic-tac-toe-multiplayer3.html` directly in a browser (e.g. `open ultimate-tic-tac-toe-multiplayer3.html`), or serve it with any static file server. There is no build or compile step.
+Open `index.html` directly in a browser (e.g. `open index.html`), or serve it with any static file server. There is no build or compile step.
 
 To test multiplayer behavior locally, open the file in two browser tabs/windows and log in with two different usernames.
 
