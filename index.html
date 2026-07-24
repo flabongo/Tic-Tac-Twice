@@ -30,7 +30,7 @@
   }
   .wrap { max-width: 460px; margin: 0 auto; padding: 20px 16px; }
   h2 { font-size: 16px; font-weight: 600; margin: 20px 0 8px; }
-  p.muted { color: var(--text-muted); font-size: 14px; }
+  .muted { color: var(--text-muted); font-size: 14px; }
   button {
     appearance: none; -webkit-appearance: none; margin: 0;
     touch-action: manipulation; user-select: none; -webkit-user-select: none;
@@ -87,6 +87,15 @@
   .small-cell { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; background: var(--cell); border: 0.5px solid var(--border); border-radius: 3px; padding: 3px; min-width: 0; min-height: 0; overflow: hidden; }
   .small-cell svg, .overlay svg { display: block; }
   .overlay { position: absolute; inset: 4px; pointer-events: none; opacity: 0.9; }
+
+  /* Admin */
+  .admin-tab.active, .admin-subtab.active { background: var(--text); color: #fff; border-color: var(--text); }
+  .admin-subtab { margin-right: 6px; margin-bottom: 10px; }
+  .sort-row { display: flex; gap: 16px; margin-bottom: 12px; }
+  .sort-group { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
+  .sort-carets { display: flex; flex-direction: column; gap: 2px; }
+  .sort-carets button { padding: 1px 5px; font-size: 8px; line-height: 1; border-radius: 3px; }
+  .sort-carets button.active { background: var(--yellow); border-color: var(--yellow); }
 </style>
 </head>
 <body>
@@ -115,6 +124,14 @@
     <div id="online-list"></div>
     <h2>Your games</h2>
     <div id="games-list"></div>
+    <button id="start-match-btn" style="width:100%; margin-top:4px;">Start match with user</button>
+    <div id="start-match-form" style="display:none; margin-top:8px; background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:12px;">
+      <div style="display:flex; gap:8px;">
+        <input id="start-match-input" type="text" placeholder="Enter username" maxlength="20" style="flex:1;">
+        <button id="start-match-submit">Invite</button>
+      </div>
+      <p id="start-match-error" style="display:none; color:var(--red); font-size:13px; margin:8px 0 0;"></p>
+    </div>
   </div>
 
   <!-- GAME -->
@@ -139,6 +156,46 @@
       <span style="width:60px"></span>
     </div>
     <div id="history-list"></div>
+  </div>
+
+  <!-- ADMIN -->
+  <div id="screen-admin" style="display:none">
+    <div id="admin-nav" class="topbar">
+      <span>
+        <button id="admin-tab-user" class="admin-tab">Find User</button>
+        <button id="admin-tab-game" class="admin-tab">Find Game</button>
+      </span>
+      <span style="display:flex; align-items:center; gap:6px;">
+        <button id="admin-snake-btn" title="Play Snake" aria-label="Play Snake" style="padding:5px 7px; display:flex; align-items:center;">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 18c0-3 3-3 3-6s-3-3-3-6 3-3 6-3 3 3 3 6-3 3-3 6 3 3 6 3"/>
+            <circle cx="19" cy="18" r="0.9" fill="#111"/>
+          </svg>
+        </button>
+        <button id="admin-logout-btn">Log out</button>
+      </span>
+    </div>
+    <div id="admin-subnav" style="display:none">
+      <button id="admin-game-current" class="admin-subtab">Current Games</button>
+      <button id="admin-game-completed" class="admin-subtab">Completed/Forfeited Games</button>
+    </div>
+    <div id="admin-body"></div>
+  </div>
+
+  <!-- ADMIN SNAKE EASTER EGG -->
+  <div id="screen-admin-snake" style="display:none">
+    <div class="topbar">
+      <b>Snake</b>
+      <button id="admin-snake-exit">Exit</button>
+    </div>
+    <div style="display:flex; justify-content:space-between; font-size:13px; color:var(--text-muted); margin-bottom:8px;">
+      <span>Score: <b id="snake-score">0</b></span>
+      <span>Best: <b id="snake-best">0</b></span>
+    </div>
+    <div style="background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:8px;">
+      <canvas id="snake-canvas" width="360" height="360" style="display:block; width:100%; height:auto; background:#fff;"></canvas>
+    </div>
+    <p class="muted" style="text-align:center; margin-top:8px;">Arrow keys on desktop, swipe to turn on mobile.</p>
   </div>
 
 </div>
@@ -182,6 +239,23 @@ let unsubIncoming = null;
 let unsubOutgoing = null;
 let unsubGames = null;
 
+// ---- Admin state ----
+const ADMIN_USERNAME = 'superadmin42069';
+let isAdmin = false;
+let adminScreen = 'find-user';
+let adminUserSort = 'recent-desc';
+let adminGameFilter = 'current';
+let allPresenceCache = {};
+let allGamesCache = [];
+let adminViewingUser = null;
+let adminViewingGameId = null;
+let adminCurrentGame = null;
+let adminPlayingAs = null;
+let unsubAdminPresence = null;
+let unsubAdminGames = null;
+let snakeLoopId = null;
+let snakeCleanup = null;
+
 // ---- Helpers ----
 function escapeHtml(str) {
   const div = document.createElement('div');
@@ -212,7 +286,7 @@ function opponentOf(game) {
 // ---- Screens ----
 function showScreen(name) {
   currentScreen = name;
-  ['login', 'lobby', 'game', 'history'].forEach(s => {
+  ['login', 'lobby', 'game', 'history', 'admin', 'admin-snake'].forEach(s => {
     document.getElementById('screen-' + s).style.display = (s === name) ? '' : 'none';
   });
   if (name === 'lobby') {
@@ -237,6 +311,10 @@ function joinLobby() {
   const input = document.getElementById('username-input');
   const name = input.value.trim();
   if (!name) return;
+  if (name === ADMIN_USERNAME) {
+    enterAdminMode();
+    return;
+  }
   myUsername = name;
   localStorage.setItem('ttt_username', name);
   startPresenceHeartbeat();
@@ -249,6 +327,7 @@ function joinLobby() {
 
 // ---- Logout ----
 document.getElementById('logout-btn').addEventListener('click', logout);
+document.getElementById('admin-logout-btn').addEventListener('click', logout);
 
 async function logout() {
   if (heartbeatInterval) clearInterval(heartbeatInterval);
@@ -257,13 +336,18 @@ async function logout() {
   if (unsubIncoming) unsubIncoming();
   if (unsubOutgoing) unsubOutgoing();
   if (unsubGames) unsubGames();
-
-  if (myUsername) {
-    try { await deleteDoc(doc(db, 'presence', myUsername)); } catch (e) { /* ignore */ }
-  }
+  if (unsubAdminPresence) unsubAdminPresence();
+  if (unsubAdminGames) unsubAdminGames();
+  if (snakeCleanup) snakeCleanup();
 
   localStorage.removeItem('ttt_username');
   myUsername = null;
+  isAdmin = false;
+  adminScreen = 'find-user';
+  adminViewingUser = null;
+  adminViewingGameId = null;
+  adminCurrentGame = null;
+  adminPlayingAs = null;
   currentGameId = null;
   currentGameData = null;
   presenceCache = {};
@@ -271,6 +355,8 @@ async function logout() {
   outgoingInvites = [];
   activeGamesCache = [];
   historyCache = [];
+  allPresenceCache = {};
+  allGamesCache = [];
 
   document.getElementById('username-input').value = '';
   showScreen('login');
@@ -332,6 +418,46 @@ async function sendInvite(toUser) {
   await addDoc(collection(db, 'invites'), {
     from: myUsername, to: toUser, status: 'pending', createdAt: serverTimestamp()
   });
+}
+
+document.getElementById('start-match-btn').addEventListener('click', () => {
+  const form = document.getElementById('start-match-form');
+  const showing = form.style.display !== 'none';
+  form.style.display = showing ? 'none' : 'block';
+  document.getElementById('start-match-error').style.display = 'none';
+  document.getElementById('start-match-input').value = '';
+  if (!showing) document.getElementById('start-match-input').focus();
+});
+document.getElementById('start-match-submit').addEventListener('click', submitStartMatch);
+document.getElementById('start-match-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitStartMatch();
+});
+
+function submitStartMatch() {
+  const input = document.getElementById('start-match-input');
+  const errorEl = document.getElementById('start-match-error');
+  const name = input.value.trim();
+  errorEl.style.display = 'none';
+  if (!name) return;
+
+  if (name === myUsername) {
+    errorEl.textContent = "You can't invite yourself.";
+    errorEl.style.display = 'block';
+    return;
+  }
+  if (!(name in presenceCache)) {
+    errorEl.textContent = 'That user does not exist.';
+    errorEl.style.display = 'block';
+    return;
+  }
+  if (outgoingInvites.some(inv => inv.to === name)) {
+    errorEl.textContent = 'Invite already sent to ' + name + '.';
+    errorEl.style.display = 'block';
+    return;
+  }
+  sendInvite(name);
+  document.getElementById('start-match-form').style.display = 'none';
+  input.value = '';
 }
 
 function subscribeIncomingInvites() {
@@ -637,6 +763,492 @@ function renderHistoryList() {
     container.appendChild(row);
   });
 }
+
+// ================= ADMIN MODE =================
+function enterAdminMode() {
+  isAdmin = true;
+  subscribeAdminData();
+  adminScreen = 'find-user';
+  showScreen('admin');
+}
+
+function subscribeAdminData() {
+  unsubAdminPresence = onSnapshot(collection(db, 'presence'), snap => {
+    allPresenceCache = {};
+    snap.forEach(d => {
+      if (d.id === ADMIN_USERNAME) return;
+      const data = d.data();
+      allPresenceCache[d.id] = data.lastSeen ? data.lastSeen.toMillis() : 0;
+    });
+    if (currentScreen === 'admin' && adminScreen === 'find-user' && !adminViewingUser) renderAdminFindUser();
+  });
+  unsubAdminGames = onSnapshot(collection(db, 'games'), snap => {
+    allGamesCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (currentScreen === 'admin' && adminScreen === 'find-game' && !adminViewingGameId) renderAdminFindGame();
+    if (adminViewingUser) renderAdminUserProfile();
+    if (adminViewingGameId) {
+      const g = allGamesCache.find(x => x.id === adminViewingGameId);
+      if (g) { adminCurrentGame = g; renderAdminGameView(); }
+    }
+  });
+}
+
+function updateAdminChrome() {
+  const nav = document.getElementById('admin-nav');
+  const subnav = document.getElementById('admin-subnav');
+  const drilled = !!(adminViewingUser || adminViewingGameId);
+  nav.style.display = drilled ? 'none' : 'flex';
+  subnav.style.display = (!drilled && adminScreen === 'find-game') ? 'block' : 'none';
+  document.getElementById('admin-tab-user').classList.toggle('active', adminScreen === 'find-user');
+  document.getElementById('admin-tab-game').classList.toggle('active', adminScreen === 'find-game');
+  document.getElementById('admin-game-current').classList.toggle('active', adminGameFilter === 'current');
+  document.getElementById('admin-game-completed').classList.toggle('active', adminGameFilter === 'completed');
+}
+
+document.getElementById('admin-tab-user').addEventListener('click', () => {
+  adminScreen = 'find-user';
+  adminViewingUser = null; adminViewingGameId = null;
+  updateAdminChrome();
+  renderAdminFindUser();
+});
+document.getElementById('admin-tab-game').addEventListener('click', () => {
+  adminScreen = 'find-game';
+  adminViewingUser = null; adminViewingGameId = null;
+  updateAdminChrome();
+  renderAdminFindGame();
+});
+document.getElementById('admin-game-current').addEventListener('click', () => {
+  adminGameFilter = 'current';
+  updateAdminChrome();
+  renderAdminFindGame();
+});
+document.getElementById('admin-game-completed').addEventListener('click', () => {
+  adminGameFilter = 'completed';
+  updateAdminChrome();
+  renderAdminFindGame();
+});
+
+// ---- Find User ----
+function renderAdminFindUser() {
+  updateAdminChrome();
+  const body = document.getElementById('admin-body');
+  body.innerHTML = '';
+
+  const sortRow = document.createElement('div');
+  sortRow.className = 'sort-row';
+  const todayStr = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
+  sortRow.innerHTML =
+    '<div class="sort-group"><span>A</span><span class="sort-carets">' +
+    '<button data-sort="alpha-asc">&#9650;</button><button data-sort="alpha-desc">&#9660;</button></span></div>' +
+    '<div class="sort-group"><span>' + todayStr + '</span><span class="sort-carets">' +
+    '<button data-sort="recent-desc">&#9650;</button><button data-sort="recent-asc">&#9660;</button></span></div>';
+  body.appendChild(sortRow);
+  sortRow.querySelectorAll('button[data-sort]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.sort === adminUserSort);
+    btn.addEventListener('click', () => { adminUserSort = btn.dataset.sort; renderAdminFindUser(); });
+  });
+
+  const listEl = document.createElement('div');
+  body.appendChild(listEl);
+
+  const users = Object.keys(allPresenceCache);
+  const now = Date.now();
+  if (adminUserSort === 'alpha-asc') users.sort((a, b) => a.localeCompare(b));
+  else if (adminUserSort === 'alpha-desc') users.sort((a, b) => b.localeCompare(a));
+  else if (adminUserSort === 'recent-asc') users.sort((a, b) => allPresenceCache[a] - allPresenceCache[b]);
+  else users.sort((a, b) => allPresenceCache[b] - allPresenceCache[a]);
+
+  if (users.length === 0) {
+    listEl.innerHTML = '<p class="muted">No users yet.</p>';
+    return;
+  }
+  users.forEach(u => {
+    const online = now - allPresenceCache[u] < 25000;
+    const row = document.createElement('div');
+    row.className = 'list-row clickable';
+    row.innerHTML =
+      '<span>' + (online ? '<span class="dot"></span>' : '') + escapeHtml(u) + '</span>' +
+      '<span class="muted">' + (online ? 'Online' : 'Offline') + '</span>';
+    row.addEventListener('click', () => viewAdminUser(u));
+    listEl.appendChild(row);
+  });
+}
+
+function viewAdminUser(username) {
+  adminViewingUser = username;
+  updateAdminChrome();
+  renderAdminUserProfile();
+}
+function exitAdminUserView() {
+  adminViewingUser = null;
+  updateAdminChrome();
+  renderAdminFindUser();
+}
+
+function buildAdminGameRow(g, perspectiveUser) {
+  const opp = g.players.find(p => p !== perspectiveUser) || g.players[0];
+  const row = document.createElement('div');
+  row.className = 'list-row clickable';
+  const rightLabel = g.status === 'finished'
+    ? (g.winner === 'draw' ? 'Draw' : (g.forfeitedBy ? 'Forfeit' : (g.winner + ' won')))
+    : ('Turn: ' + g.currentTurn);
+  row.innerHTML =
+    '<span>' + escapeHtml(perspectiveUser) + ' vs ' + escapeHtml(opp) + '</span>' +
+    '<span class="muted">' + escapeHtml(rightLabel) + '</span>';
+  row.addEventListener('click', () => viewAdminGame(g.id));
+  return row;
+}
+
+function renderAdminUserProfile() {
+  const u = adminViewingUser;
+  const body = document.getElementById('admin-body');
+  body.innerHTML = '';
+
+  const topbar = document.createElement('div');
+  topbar.className = 'topbar';
+  const back = document.createElement('button');
+  back.textContent = '← Back';
+  back.addEventListener('click', exitAdminUserView);
+  const title = document.createElement('b');
+  title.textContent = u;
+  topbar.appendChild(back); topbar.appendChild(title); topbar.appendChild(document.createElement('span'));
+  body.appendChild(topbar);
+
+  const myGames = allGamesCache.filter(g => g.players.includes(u));
+  const active = myGames.filter(g => g.status === 'active');
+  const finished = myGames.filter(g => g.status === 'finished')
+    .sort((a, b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0));
+
+  const h1 = document.createElement('h2'); h1.textContent = 'Active games'; body.appendChild(h1);
+  if (active.length === 0) {
+    const p = document.createElement('p'); p.className = 'muted'; p.textContent = 'No active games.'; body.appendChild(p);
+  } else {
+    active.forEach(g => body.appendChild(buildAdminGameRow(g, u)));
+  }
+
+  const h2 = document.createElement('h2'); h2.textContent = 'History'; body.appendChild(h2);
+  if (finished.length === 0) {
+    const p = document.createElement('p'); p.className = 'muted'; p.textContent = 'No finished games.'; body.appendChild(p);
+  } else {
+    finished.forEach(g => body.appendChild(buildAdminGameRow(g, u)));
+  }
+}
+
+// ---- Find Game ----
+function renderAdminFindGame() {
+  updateAdminChrome();
+  const body = document.getElementById('admin-body');
+  body.innerHTML = '';
+
+  const filtered = allGamesCache
+    .filter(g => adminGameFilter === 'current' ? g.status === 'active' : g.status === 'finished')
+    .sort((a, b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0));
+
+  if (filtered.length === 0) {
+    body.innerHTML = '<p class="muted">No games here.</p>';
+    return;
+  }
+  filtered.forEach(g => {
+    const row = document.createElement('div');
+    row.className = 'list-row clickable';
+    const rightLabel = g.status === 'finished'
+      ? (g.winner === 'draw' ? 'Draw' : (g.forfeitedBy ? 'Forfeit' : (g.winner + ' won')))
+      : ('Turn: ' + g.currentTurn);
+    row.innerHTML =
+      '<span>' + escapeHtml(g.players.join(' vs ')) + '</span>' +
+      '<span class="muted">' + escapeHtml(rightLabel) + '</span>';
+    row.addEventListener('click', () => viewAdminGame(g.id));
+    body.appendChild(row);
+  });
+}
+
+// ---- Admin game view: view or play as either side ----
+function viewAdminGame(gameId) {
+  adminViewingGameId = gameId;
+  adminCurrentGame = allGamesCache.find(g => g.id === gameId) || null;
+  adminPlayingAs = adminCurrentGame ? adminCurrentGame.currentTurn : null;
+  updateAdminChrome();
+  renderAdminGameView();
+}
+function exitAdminGameView() {
+  adminViewingGameId = null;
+  adminCurrentGame = null;
+  adminPlayingAs = null;
+  updateAdminChrome();
+  if (adminViewingUser) renderAdminUserProfile(); else renderAdminFindGame();
+}
+
+function renderAdminGameView() {
+  const g = adminCurrentGame;
+  const body = document.getElementById('admin-body');
+  if (!g) { body.innerHTML = '<p class="muted">Game not found.</p>'; return; }
+  body.innerHTML = '';
+
+  const topbar = document.createElement('div');
+  topbar.className = 'topbar';
+  const back = document.createElement('button');
+  back.textContent = '← Back';
+  back.addEventListener('click', exitAdminGameView);
+  const title = document.createElement('b');
+  title.textContent = g.players.join(' vs ');
+  topbar.appendChild(back); topbar.appendChild(title); topbar.appendChild(document.createElement('span'));
+  body.appendChild(topbar);
+
+  const status = document.createElement('div');
+  status.style.cssText = 'font-size:14px; margin:4px 0 10px; color:var(--text-muted);';
+  status.textContent = g.status === 'finished'
+    ? ('Finished — ' + (g.winner === 'draw' ? 'Draw' : g.winner + ' won' + (g.forfeitedBy ? ' (forfeit)' : '')))
+    : ('Actual turn: ' + g.currentTurn);
+  body.appendChild(status);
+
+  if (g.status === 'active') {
+    const toggle = document.createElement('div');
+    toggle.style.cssText = 'display:flex; gap:8px; margin-bottom:12px;';
+    g.players.forEach(p => {
+      const b = document.createElement('button');
+      b.textContent = 'Play as ' + p;
+      if (p === adminPlayingAs) { b.style.background = 'var(--yellow)'; b.style.borderColor = 'var(--yellow)'; }
+      b.addEventListener('click', () => { adminPlayingAs = p; renderAdminGameView(); });
+      toggle.appendChild(b);
+    });
+    body.appendChild(toggle);
+  }
+
+  const outer = document.createElement('div');
+  outer.id = 'admin-board-outer';
+  outer.style.cssText = 'padding:6px; border-radius:12px; box-shadow:0 0 0 3px transparent;';
+  const grid = document.createElement('div');
+  grid.id = 'admin-big-grid';
+  grid.style.cssText = 'display:grid; grid-template-columns:repeat(3,1fr); gap:8px; background:var(--panel); padding:8px; border-radius:8px; border:1px solid var(--border);';
+  outer.appendChild(grid);
+  body.appendChild(outer);
+
+  renderAdminBoard(g);
+}
+
+function renderAdminBoard(g) {
+  const grid = document.getElementById('admin-big-grid');
+  const outer = document.getElementById('admin-board-outer');
+  const canMove = g.status === 'active';
+
+  outer.style.boxShadow = (canMove && g.activeBig === null) ? '0 0 0 3px var(--yellow)' : '0 0 0 3px transparent';
+
+  grid.innerHTML = '';
+  for (let bigIdx = 0; bigIdx < 9; bigIdx++) {
+    const isTargetBig = canMove && g.activeBig === bigIdx;
+    const cell = document.createElement('div');
+    cell.className = 'big-cell';
+    cell.style.boxShadow = isTargetBig ? '0 0 0 3px var(--yellow)' : '0 0 0 2px var(--border-strong)';
+
+    const smallGrid = document.createElement('div');
+    smallGrid.className = 'small-grid';
+
+    for (let smallIdx = 0; smallIdx < 9; smallIdx++) {
+      const idx = bigIdx * 9 + smallIdx;
+      const value = g.board[idx];
+      const valid = canMove && g.bigWinners[bigIdx] === null && value === null &&
+        (g.activeBig === null || g.activeBig === bigIdx);
+      const isLastMove = g.lastMove && g.lastMove.bigIdx === bigIdx && g.lastMove.smallIdx === smallIdx;
+
+      const btn = document.createElement('button');
+      btn.className = 'small-cell';
+      btn.style.cursor = valid ? 'pointer' : 'default';
+      btn.style.background = isLastMove ? 'var(--last-move-bg)' : 'var(--cell)';
+      if (value) btn.innerHTML = symbolSvg(value, false);
+      if (valid) btn.addEventListener('click', () => makeAdminMove(bigIdx, smallIdx));
+      else if (!value) btn.style.opacity = '0.5';
+      smallGrid.appendChild(btn);
+    }
+    cell.appendChild(smallGrid);
+
+    if (g.bigWinners[bigIdx] === 'X' || g.bigWinners[bigIdx] === 'O') {
+      const ov = document.createElement('div');
+      ov.className = 'overlay';
+      ov.innerHTML = symbolSvg(g.bigWinners[bigIdx], true);
+      cell.appendChild(ov);
+    }
+    grid.appendChild(cell);
+  }
+}
+
+async function makeAdminMove(bigIdx, smallIdx) {
+  const g = adminCurrentGame;
+  if (!g || g.status !== 'active' || !adminPlayingAs) return;
+  if (g.bigWinners[bigIdx] !== null) return;
+  const idx = bigIdx * 9 + smallIdx;
+  if (g.board[idx] !== null) return;
+  if (g.activeBig !== null && g.activeBig !== bigIdx) return;
+
+  const symbol = g.symbols[adminPlayingAs];
+  const board = g.board.slice();
+  board[idx] = symbol;
+
+  const bigWinners = g.bigWinners.slice();
+  if (bigWinners[bigIdx] === null) {
+    const smallCells = board.slice(bigIdx * 9, bigIdx * 9 + 9);
+    const w = checkWin(smallCells);
+    if (w) bigWinners[bigIdx] = w;
+    else if (smallCells.every(v => v !== null)) bigWinners[bigIdx] = 'draw';
+  }
+
+  const update = { board, bigWinners, lastMove: { bigIdx, smallIdx }, updatedAt: serverTimestamp() };
+  const overall = checkWin(bigWinners);
+  if (overall) {
+    update.status = 'finished';
+    update.winner = g.players.find(p => g.symbols[p] === overall);
+  } else if (bigWinners.every(v => v !== null)) {
+    update.status = 'finished';
+    update.winner = 'draw';
+  } else {
+    update.activeBig = bigWinners[smallIdx] === null ? smallIdx : null;
+    update.currentTurn = g.players.find(p => p !== adminPlayingAs);
+  }
+
+  await updateDoc(doc(db, 'games', g.id), update);
+}
+
+// ---- Admin snake easter egg ----
+document.getElementById('admin-snake-btn').addEventListener('click', () => {
+  showScreen('admin-snake');
+  initSnakeGame();
+});
+document.getElementById('admin-snake-exit').addEventListener('click', exitSnakeGame);
+
+function exitSnakeGame() {
+  if (snakeCleanup) snakeCleanup();
+  showScreen('admin');
+  updateAdminChrome();
+  if (adminScreen === 'find-user') renderAdminFindUser(); else renderAdminFindGame();
+}
+
+function initSnakeGame() {
+  if (snakeCleanup) snakeCleanup();
+
+  const canvas = document.getElementById('snake-canvas');
+  const ctx = canvas.getContext('2d');
+  const gridSize = 18;
+  const cell = canvas.width / gridSize;
+
+  let snake = [{ x: 9, y: 9 }, { x: 8, y: 9 }, { x: 7, y: 9 }];
+  let dir = { x: 1, y: 0 };
+  let nextDir = { x: 1, y: 0 };
+  let score = 0;
+  let best = parseInt(localStorage.getItem('ttt_snakeBest') || '0', 10) || 0;
+  let alive = true;
+  let food = randomFood();
+
+  document.getElementById('snake-score').textContent = score;
+  document.getElementById('snake-best').textContent = best;
+
+  function randomFood() {
+    let pos;
+    do {
+      pos = { x: Math.floor(Math.random() * gridSize), y: Math.floor(Math.random() * gridSize) };
+    } while (snake.some(s => s.x === pos.x && s.y === pos.y));
+    return pos;
+  }
+
+  function setDir(x, y) {
+    if (dir.x === -x && dir.y === -y) return;
+    nextDir = { x, y };
+  }
+
+  function keyHandler(e) {
+    if (e.key === 'ArrowUp') setDir(0, -1);
+    else if (e.key === 'ArrowDown') setDir(0, 1);
+    else if (e.key === 'ArrowLeft') setDir(-1, 0);
+    else if (e.key === 'ArrowRight') setDir(1, 0);
+    else return;
+    e.preventDefault();
+  }
+  document.addEventListener('keydown', keyHandler);
+
+  let touchStartX = 0, touchStartY = 0;
+  function touchStart(e) {
+    const t = e.touches[0];
+    touchStartX = t.clientX; touchStartY = t.clientY;
+  }
+  function touchEnd(e) {
+    if (!alive) { initSnakeGame(); return; }
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartX;
+    const dy = t.clientY - touchStartY;
+    if (Math.abs(dx) > Math.abs(dy)) { if (Math.abs(dx) > 20) setDir(dx > 0 ? 1 : -1, 0); }
+    else { if (Math.abs(dy) > 20) setDir(0, dy > 0 ? 1 : -1); }
+  }
+  function clickHandler() { if (!alive) initSnakeGame(); }
+  canvas.addEventListener('touchstart', touchStart);
+  canvas.addEventListener('touchend', touchEnd);
+  canvas.addEventListener('click', clickHandler);
+
+  function tick() {
+    if (!alive) return;
+    dir = nextDir;
+    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+    if (head.x < 0 || head.x >= gridSize || head.y < 0 || head.y >= gridSize ||
+        snake.some(s => s.x === head.x && s.y === head.y)) { endGame(); return; }
+    snake.unshift(head);
+    if (head.x === food.x && head.y === food.y) {
+      score += 10;
+      document.getElementById('snake-score').textContent = score;
+      food = randomFood();
+    } else {
+      snake.pop();
+    }
+    draw();
+  }
+
+  function endGame() {
+    alive = false;
+    clearInterval(snakeLoopId);
+    if (score > best) {
+      best = score;
+      localStorage.setItem('ttt_snakeBest', String(best));
+      document.getElementById('snake-best').textContent = best;
+    }
+    draw();
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#111';
+    ctx.font = '16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Game over — tap to retry', canvas.width / 2, canvas.height / 2);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#e5e3db';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i <= gridSize; i++) {
+      ctx.beginPath(); ctx.moveTo(i * cell, 0); ctx.lineTo(i * cell, canvas.height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i * cell); ctx.lineTo(canvas.width, i * cell); ctx.stroke();
+    }
+    ctx.strokeStyle = '#111111';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(food.x * cell + cell / 2, food.y * cell + cell / 2, cell / 2 - 3, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#111111';
+    snake.forEach((s, i) => {
+      ctx.globalAlpha = i === 0 ? 1 : 0.75;
+      ctx.fillRect(s.x * cell + 1, s.y * cell + 1, cell - 2, cell - 2);
+      ctx.globalAlpha = 1;
+    });
+  }
+
+  draw();
+  snakeLoopId = setInterval(tick, 110);
+
+  snakeCleanup = () => {
+    clearInterval(snakeLoopId);
+    document.removeEventListener('keydown', keyHandler);
+    canvas.removeEventListener('touchstart', touchStart);
+    canvas.removeEventListener('touchend', touchEnd);
+    canvas.removeEventListener('click', clickHandler);
+    snakeCleanup = null;
+  };
+}
+
 </script>
 </body>
 </html>
